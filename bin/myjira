@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# List open Jira tickets assigned to me.
+# Token: Jira > Profile > Personal Access Tokens. Store in $JIRA_TOKEN or ~/.config/jira-token (chmod 600).
+set -euo pipefail
+
+JIRA_URL="${JIRA_URL:-https://jira.fnox.se}"
+TOKEN="${JIRA_TOKEN:-$(cat ~/.config/jira-token 2>/dev/null || true)}"
+[[ -z "$TOKEN" ]] && { echo "No token. Set JIRA_TOKEN or create ~/.config/jira-token" >&2; exit 1; }
+
+JQL="${1:-assignee = currentUser() AND statusCategory != Done ORDER BY status ASC, updated DESC}"
+
+curl -sfG "$JIRA_URL/rest/api/2/search" \
+  -H "Authorization: Bearer $TOKEN" \
+  --data-urlencode "jql=$JQL" \
+  --data-urlencode "fields=summary,status,issuetype,priority" \
+  --data-urlencode "maxResults=200" \
+| jq -r --arg url "$JIRA_URL" '
+    .issues
+    | group_by(.fields.status.name)[]
+    | "\n\u001b[1m\(.[0].fields.status.name) (\(length))\u001b[0m",
+      (.[] | "  \(.key)\t\(.fields.issuetype.name)\t\(.fields.priority.name // "-")\t\(.fields.summary)")
+  ' | column -t -s $'\t'
